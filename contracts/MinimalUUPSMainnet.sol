@@ -27,7 +27,9 @@ contract MinimalUUPSMainnet is OwnableUpgradeable, UUPSUpgradeable {
         _identityRegistry = identityRegistry_;
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     function getVersion() external pure returns (string memory) {
         return "1.0.0";

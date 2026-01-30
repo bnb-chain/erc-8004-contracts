@@ -23,9 +23,9 @@ const IMPLEMENTATION_SALTS = {
  * Expected vanity proxy addresses (deterministic across all networks)
  */
 const EXPECTED_ADDRESSES = {
-  identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
-  reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
-  validationRegistry: "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
+  identityRegistry: "0x8004A41392bdd4A4F12339447ab4B8719D562e51",
+  reputationRegistry: "0x8004B73fb8Acb5633ce2810d5bd38A1911226D9f",
+  validationRegistry: "0x8004CA7B0d976f1C4109eaB884E91E85679A1E43",
 } as const;
 
 /**

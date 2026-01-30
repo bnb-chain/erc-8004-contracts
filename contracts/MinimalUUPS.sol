@@ -22,12 +22,14 @@ contract MinimalUUPS is OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function initialize(address identityRegistry_) public initializer {
-        __Ownable_init(address(0x547289319C3e6aedB179C0b8e8aF0B5ACd062603));
+        __Ownable_init(address(0x8888d0A88ef8302dfa4BA53c41c2fE3c4E486f42));
         __UUPSUpgradeable_init();
         _identityRegistry = identityRegistry_;
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {}
 
     function getVersion() external pure returns (string memory) {
         return "0.0.1";
