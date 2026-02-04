@@ -10,7 +10,7 @@ async function main() {
   const [deployer] = await viem.getWalletClients();
 
   // Owner address (hardcoded from MinimalUUPS.sol line 19)
-  const ownerAddress = "0x547289319C3e6aedB179C0b8e8aF0B5ACd062603" as `0x${string}`;
+  const ownerAddress = "0x8888d0A88ef8302dfa4BA53c41c2fE3c4E486f42" as `0x${string}`;
 
   console.log("Funding Owner Address on Localhost");
   console.log("===================================");

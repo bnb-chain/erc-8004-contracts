@@ -218,6 +218,19 @@ async function main() {
   const validationResult = await findVanitySaltParallel("0x8004c", validationProxyBytecode, "C", numWorkers);
   console.log("");
 
+  // Find salt for Escrow proxy (0x8004E)
+  // Initialize with IdentityRegistry address
+  console.log("Step 5: Finding salt for Escrow (0x8004E)...");
+  console.log(`        Initialize with: ${identityProxyAddress}`);
+  const escrowInitData = encodeFunctionData({
+    abi: minimalUUPSArtifact.abi,
+    functionName: "initialize",
+    args: [identityProxyAddress]
+  });
+  const escrowProxyBytecode = await getProxyBytecode(minimalUUPSAddress, escrowInitData);
+  const escrowResult = await findVanitySaltParallel("0x8004e", escrowProxyBytecode, "E", numWorkers);
+  console.log("");
+
   // Summary
   console.log("=".repeat(80));
   console.log("Vanity Proxy Salts Found!");
@@ -240,23 +253,31 @@ async function main() {
   console.log("  Address: ", validationResult.address);
   console.log(`  Init:     MinimalUUPS.initialize(${identityProxyAddress})`);
   console.log("");
+  console.log("Escrow Proxy:");
+  console.log("  Salt:    ", escrowResult.salt);
+  console.log("  Address: ", escrowResult.address);
+  console.log(`  Init:     MinimalUUPS.initialize(${identityProxyAddress})`);
+  console.log("");
   console.log("=".repeat(80));
   console.log("Next steps:");
-  console.log("1. Update VANITY_SALTS in scripts/deploy-vanity.ts");
+  console.log("1. Update VANITY_SALTS and ESCROW_PROXY_SALT in scripts/deploy-vanity.ts");
   console.log("2. Update EXPECTED_ADDRESSES in scripts/deploy-vanity.ts");
-  console.log("3. Update scripts/verify-vanity.ts with new addresses");
+  console.log("3. Update EXPECTED_ESCROW_PROXY_ADDRESS in scripts/escrow-job.ts");
+  console.log("4. Update scripts/verify-vanity.ts with new addresses");
   console.log("");
 
   return {
     salts: {
       identity: identityResult.salt,
       reputation: reputationResult.salt,
-      validation: validationResult.salt
+      validation: validationResult.salt,
+      escrow: escrowResult.salt
     },
     addresses: {
       identity: identityResult.address,
       reputation: reputationResult.address,
-      validation: validationResult.address
+      validation: validationResult.address,
+      escrow: escrowResult.address
     }
   };
 }
