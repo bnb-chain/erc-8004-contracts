@@ -11,6 +11,12 @@ dotenv.config();
 const SAFE_SINGLETON_FACTORY = "0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7" as const;
 
 /**
+ * Salt for MinimalUUPS (single instance; must match deploy-vanity.ts)
+ */
+const MINIMAL_UUPS_SALT =
+  "0x0000000000000000000000000000000000000000000000000000000000000001" as Hex;
+
+/**
  * Salts for implementation contracts (must match deploy-vanity.ts)
  */
 const IMPLEMENTATION_SALTS = {
@@ -112,16 +118,19 @@ async function main() {
   console.log("  ValidationRegistry:  ", validationProxyAddress);
   console.log("");
 
-  // Get MinimalUUPS ABI for upgradeToAndCall
+  // Get MinimalUUPS ABI and address for upgradeToAndCall
   const minimalUUPSArtifact = await hre.artifacts.readArtifact("MinimalUUPS");
+  const minimalUUPSBytecode = minimalUUPSArtifact.bytecode as Hex;
+  const minimalUUPSAddress = getCreate2Address({
+    from: SAFE_SINGLETON_FACTORY,
+    salt: MINIMAL_UUPS_SALT,
+    bytecodeHash: keccak256(minimalUUPSBytecode),
+  });
 
   console.log("=".repeat(80));
   console.log("PERFORMING UPGRADES");
   console.log("=".repeat(80));
   console.log("");
-
-  // Proxies are already initialized by MinimalUUPS
-  // Just upgrade them to real implementations (no need to reinitialize)
 
   // Helper function to get current implementation
   const getImplementation = async (proxyAddress: `0x${string}`) => {
@@ -131,6 +140,10 @@ async function main() {
       slot: implSlot as `0x${string}`,
     });
   };
+
+  // Only call initialize() when current impl is MinimalUUPS (first-time upgrade).
+  // If current impl is already the target (or another version), use empty data to avoid InvalidInitialization.
+  const emptyBytes = "0x" as `0x${string}`;
 
   // Upgrade IdentityRegistry proxy
   console.log("1. Checking IdentityRegistry proxy...");
@@ -143,16 +156,23 @@ async function main() {
     console.log("");
   } else {
     console.log("   Upgrading IdentityRegistry proxy...");
-    // Encode initialize() call for the new implementation
-    const identityInitData = encodeFunctionData({
-      abi: identityImplArtifact.abi,
-      functionName: "initialize",
-      args: []
-    });
+    const isFromMinimalUUPS =
+      currentIdentityImplAddress?.toLowerCase() === minimalUUPSAddress.toLowerCase();
+    const identityInitData =
+      isFromMinimalUUPS
+        ? encodeFunctionData({
+            abi: identityImplArtifact.abi,
+            functionName: "initialize",
+            args: [],
+          })
+        : emptyBytes;
+    if (!isFromMinimalUUPS) {
+      console.log("   (Current impl is not MinimalUUPS; upgrading without calling initialize to avoid InvalidInitialization)");
+    }
     const identityUpgradeData = encodeFunctionData({
       abi: minimalUUPSArtifact.abi,
       functionName: "upgradeToAndCall",
-      args: [identityImpl, identityInitData]
+      args: [identityImpl, identityInitData],
     });
     const identityUpgradeTxHash = await ownerWallet.sendTransaction({
       to: identityProxyAddress,
@@ -175,16 +195,23 @@ async function main() {
     console.log("");
   } else {
     console.log("   Upgrading ReputationRegistry proxy...");
-    // Encode initialize(address) call for the new implementation
-    const reputationInitData = encodeFunctionData({
-      abi: reputationImplArtifact.abi,
-      functionName: "initialize",
-      args: [identityProxyAddress]
-    });
+    const isFromMinimalUUPS =
+      currentReputationImplAddress?.toLowerCase() === minimalUUPSAddress.toLowerCase();
+    const reputationInitData =
+      isFromMinimalUUPS
+        ? encodeFunctionData({
+            abi: reputationImplArtifact.abi,
+            functionName: "initialize",
+            args: [identityProxyAddress],
+          })
+        : emptyBytes;
+    if (!isFromMinimalUUPS) {
+      console.log("   (Upgrading without calling initialize to avoid InvalidInitialization)");
+    }
     const reputationUpgradeData = encodeFunctionData({
       abi: minimalUUPSArtifact.abi,
       functionName: "upgradeToAndCall",
-      args: [reputationImpl, reputationInitData]
+      args: [reputationImpl, reputationInitData],
     });
     const reputationUpgradeTxHash = await ownerWallet.sendTransaction({
       to: reputationProxyAddress,
@@ -207,16 +234,23 @@ async function main() {
     console.log("");
   } else {
     console.log("   Upgrading ValidationRegistry proxy...");
-    // Encode initialize(address) call for the new implementation
-    const validationInitData = encodeFunctionData({
-      abi: validationImplArtifact.abi,
-      functionName: "initialize",
-      args: [identityProxyAddress]
-    });
+    const isFromMinimalUUPS =
+      currentValidationImplAddress?.toLowerCase() === minimalUUPSAddress.toLowerCase();
+    const validationInitData =
+      isFromMinimalUUPS
+        ? encodeFunctionData({
+            abi: validationImplArtifact.abi,
+            functionName: "initialize",
+            args: [identityProxyAddress],
+          })
+        : emptyBytes;
+    if (!isFromMinimalUUPS) {
+      console.log("   (Upgrading without calling initialize to avoid InvalidInitialization)");
+    }
     const validationUpgradeData = encodeFunctionData({
       abi: minimalUUPSArtifact.abi,
       functionName: "upgradeToAndCall",
-      args: [validationImpl, validationInitData]
+      args: [validationImpl, validationInitData],
     });
     const validationUpgradeTxHash = await ownerWallet.sendTransaction({
       to: validationProxyAddress,
