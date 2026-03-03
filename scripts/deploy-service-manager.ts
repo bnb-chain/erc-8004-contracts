@@ -1,11 +1,11 @@
 /**
- * Deploy ServiceManager as a UUPS upgrade of EscrowUpgradeable.
+ * Deploy EscrowUpgradeable (V3 / Bazaar) as a fresh UUPS proxy.
  *
  * For fresh deployment (no existing proxy):
  *   1. Deploy HardhatMinimalUUPS as initial implementation
  *   2. Deploy ERC1967Proxy pointing to it
- *   3. Deploy ServiceManager implementation
- *   4. Upgrade proxy to ServiceManager via upgradeToAndCall(initializeV3)
+ *   3. Deploy EscrowUpgradeable V3 implementation
+ *   4. Upgrade proxy to EscrowUpgradeable via upgradeToAndCall(initializeV3)
  *
  * UMA OOv3 sandbox addresses (BNB Chain testnet):
  *   OOV3:       0xFc5bb3e475cc9264760Cf33b1e9ea7B87942C709
@@ -63,13 +63,13 @@ async function main() {
   ]);
   console.log(`  Proxy: ${proxy.address}`);
 
-  // Step 3: Deploy ServiceManager implementation
-  console.log("\n[3/4] Deploying ServiceManager implementation...");
-  const smImpl = await viem.deployContract("ServiceManager");
-  console.log(`  ServiceManager impl: ${smImpl.address}`);
+  // Step 3: Deploy EscrowUpgradeable V3 implementation
+  console.log("\n[3/4] Deploying EscrowUpgradeable V3 implementation...");
+  const smImpl = await viem.deployContract("EscrowUpgradeable");
+  console.log(`  EscrowUpgradeable impl: ${smImpl.address}`);
 
-  // Step 4: Upgrade proxy to ServiceManager
-  console.log("\n[4/4] Upgrading proxy to ServiceManager...");
+  // Step 4: Upgrade proxy to EscrowUpgradeable V3
+  console.log("\n[4/4] Upgrading proxy to EscrowUpgradeable V3...");
   const initV3Calldata = encodeFunctionData({
     abi: [{
       name: "initializeV3",
@@ -101,7 +101,7 @@ async function main() {
 
   // Step 5: Set Identity Registry
   console.log("\n[5/5] Setting Identity Registry...");
-  const sm = await viem.getContractAt("ServiceManager", proxy.address);
+  const sm = await viem.getContractAt("EscrowUpgradeable", proxy.address);
   await sm.write.setIdentityRegistry([IDENTITY_REGISTRY]);
   console.log(`  Identity Registry: ${IDENTITY_REGISTRY}`);
 
@@ -111,7 +111,7 @@ async function main() {
   const minFee = await sm.read.minServiceFee();
   const idReg = await sm.read.getIdentityRegistry();
 
-  console.log("\n=== ServiceManager Deployed ===");
+  console.log("\n=== EscrowUpgradeable V3 Deployed ===");
   console.log(`  Proxy address:     ${proxy.address}`);
   console.log(`  Implementation:    ${smImpl.address}`);
   console.log(`  Identity Registry: ${idReg}`);

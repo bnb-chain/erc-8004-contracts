@@ -1,8 +1,8 @@
 /**
- * Upgrade an existing EscrowUpgradeable proxy to ServiceManager.
+ * Upgrade an existing EscrowUpgradeable proxy to V3 (Bazaar).
  *
  * This script:
- *   1. Deploys the new ServiceManager implementation
+ *   1. Deploys the new EscrowUpgradeable V3 implementation
  *   2. Calls upgradeToAndCall on the existing proxy to switch implementation + initializeV3
  *   3. Calls setIdentityRegistry to set the Identity Registry address
  *   4. Verifies the upgrade
@@ -61,13 +61,13 @@ async function main() {
     console.log(`  WARNING: Proxy holds ${proxyBalance} wei BNB. Use rescueETH() after upgrade to recover.`);
   }
 
-  // Step 1: Deploy ServiceManager implementation
-  console.log("\n[1/4] Deploying ServiceManager implementation...");
-  const smImpl = await viem.deployContract("ServiceManager");
+  // Step 1: Deploy EscrowUpgradeable V3 implementation
+  console.log("\n[1/4] Deploying EscrowUpgradeable V3 implementation...");
+  const smImpl = await viem.deployContract("EscrowUpgradeable");
   console.log(`  Implementation: ${smImpl.address}`);
 
   // Step 2: Upgrade proxy via upgradeToAndCall
-  console.log("\n[2/4] Upgrading proxy to ServiceManager...");
+  console.log("\n[2/4] Upgrading proxy to EscrowUpgradeable V3...");
   const initV3Calldata = encodeFunctionData({
     abi: [{
       name: "initializeV3",
@@ -97,11 +97,11 @@ async function main() {
   // The existing proxy exposes upgradeToAndCall via UUPSUpgradeable
   const proxyAsUUPS = await viem.getContractAt("EscrowUpgradeable", proxyAddress as `0x${string}`);
   await proxyAsUUPS.write.upgradeToAndCall([smImpl.address, initV3Calldata]);
-  console.log(`  Upgrade TX sent. Proxy now points to ServiceManager.`);
+  console.log(`  Upgrade TX sent. Proxy now points to EscrowUpgradeable V3.`);
 
   // Step 3: Set Identity Registry (may have changed or been zero)
   console.log("\n[3/4] Setting Identity Registry...");
-  const sm = await viem.getContractAt("ServiceManager", proxyAddress as `0x${string}`);
+  const sm = await viem.getContractAt("EscrowUpgradeable", proxyAddress as `0x${string}`);
   await sm.write.setIdentityRegistry([identityRegistry as `0x${string}`]);
   console.log(`  Identity Registry set to: ${identityRegistry}`);
 
@@ -113,7 +113,7 @@ async function main() {
   const idReg = await sm.read.getIdentityRegistry();
   const nextId = await sm.read.nextJobId();
 
-  console.log("\n=== ServiceManager Upgrade Complete ===");
+  console.log("\n=== EscrowUpgradeable V3 Upgrade Complete ===");
   console.log(`  Proxy address:     ${proxyAddress}  (unchanged)`);
   console.log(`  New implementation: ${smImpl.address}`);
   console.log(`  Identity Registry: ${idReg}`);

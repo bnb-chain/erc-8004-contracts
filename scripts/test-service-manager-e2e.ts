@@ -1,8 +1,8 @@
 /**
- * E2E test for ServiceManager on BNB Chain testnet with real OOv3 sandbox.
+ * E2E test for EscrowUpgradeable (V3 / Bazaar) on BNB Chain testnet with real OOv3 sandbox.
  *
  * Prerequisites:
- *   1. ServiceManager deployed (run deploy-service-manager.ts first)
+ *   1. EscrowUpgradeable V3 deployed (run deploy-service-manager.ts first)
  *   2. Identity Registry with at least one registered agent
  *   3. Environment variables set:
  *      - BSC_TESTNET_RPC_URL
@@ -37,11 +37,11 @@ async function main() {
   const [wallet] = await viem.getWalletClients();
   const account = wallet.account.address;
 
-  console.log(`\n=== E2E Test: ServiceManager ===`);
+  console.log(`\n=== E2E Test: EscrowUpgradeable V3 ===`);
   console.log(`Account:          ${account}`);
-  console.log(`ServiceManager:   ${smAddress}`);
+  console.log(`Escrow proxy:     ${smAddress}`);
 
-  const sm = await viem.getContractAt("ServiceManager", smAddress as `0x${string}`);
+  const sm = await viem.getContractAt("EscrowUpgradeable", smAddress as `0x${string}`);
   const token = await viem.getContractAt("@openzeppelin/contracts/token/ERC20/IERC20.sol:IERC20", UMA.TEST_TOKEN);
 
   // -- Setup: Mint test tokens --
