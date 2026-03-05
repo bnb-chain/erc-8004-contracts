@@ -70,9 +70,13 @@ struct Job {
     JobPhase phase;
     SettlementType settlement;
 
-    bytes32 requestHash;
-    bytes32 responseHash;
-    bytes32 resultHash;
+    // Negotiation phase hashes (anchored by client at createJobAndLock)
+    bytes32 negotiationRequestHash;   // keccak256(NegotiationRequest)
+    bytes32 negotiationResponseHash;  // keccak256(NegotiationResponse with price)
+
+    // Service phase hashes (set by agent at submitResult)
+    bytes32 serviceRecordHash;        // keccak256(full IPFS ServiceRecord)
+    bytes32 serviceResponseHash;      // keccak256(agent's service response content)
 
     bytes32 assertionId;
 
@@ -117,7 +121,8 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
         address indexed client,
         uint256 indexed agentId,
         uint256 agreedPrice,
-        bytes32 requestHash
+        bytes32 negotiationRequestHash,
+        bytes32 negotiationResponseHash
     );
 
     event JobAccepted(uint256 indexed jobId, uint256 indexed agentId);
@@ -131,8 +136,8 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
 
     event ResultSubmitted(
         uint256 indexed jobId,
-        bytes32 resultHash,
-        bytes32 responseHash,
+        bytes32 serviceRecordHash,
+        bytes32 serviceResponseHash,
         string dataUrl,
         bytes32 assertionId
     );
@@ -350,7 +355,8 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
 
     function createJobAndLock(
         uint256 agentId,
-        bytes32 requestHash,
+        bytes32 negotiationRequestHash,
+        bytes32 negotiationResponseHash,
         uint256 amount
     ) external nonReentrant returns (uint256 jobId) {
         BazaarStorage storage $ = _getBazaarStorage();
@@ -358,7 +364,8 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
         if (amount < $._minServiceFee) {
             revert BelowMinimumFee(amount, $._minServiceFee);
         }
-        if (requestHash == bytes32(0)) revert InvalidAmount();
+        if (negotiationRequestHash == bytes32(0)) revert InvalidAmount();
+        if (negotiationResponseHash == bytes32(0)) revert InvalidAmount();
 
         address agentOwner = IIdentityRegistry(_identityRegistry).ownerOf(agentId);
         require(agentOwner != address(0), "agent not found");
@@ -373,12 +380,13 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
         job.agentOwner = agentOwner;
         job.agreedPrice = amount;
         job.phase = JobPhase.PaymentLocked;
-        job.requestHash = requestHash;
+        job.negotiationRequestHash = negotiationRequestHash;
+        job.negotiationResponseHash = negotiationResponseHash;
         job.createdAt = block.timestamp;
         job.updatedAt = block.timestamp;
         job.acceptDeadline = block.timestamp + $._acceptTimeout;
 
-        emit JobCreated(jobId, msg.sender, agentId, amount, requestHash);
+        emit JobCreated(jobId, msg.sender, agentId, amount, negotiationRequestHash, negotiationResponseHash);
     }
 
     function cancelExpired(uint256 jobId) external nonReentrant {
@@ -453,8 +461,8 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
 
     function submitResult(
         uint256 jobId,
-        bytes32 resultHash,
-        bytes32 responseHash,
+        bytes32 serviceRecordHash,
+        bytes32 serviceResponseHash,
         string calldata dataUrl
     ) external nonReentrant {
         BazaarStorage storage $ = _getBazaarStorage();
@@ -466,8 +474,8 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
         if (msg.sender != job.agentOwner) revert Unauthorized();
         if (block.timestamp > job.submitDeadline) revert DeadlineExpired(jobId);
 
-        job.resultHash = resultHash;
-        job.responseHash = responseHash;
+        job.serviceRecordHash = serviceRecordHash;
+        job.serviceResponseHash = serviceResponseHash;
 
         uint256 bond = (job.agreedPrice * $._bondRate) / 10000;
         job.assertionBond = bond;
@@ -494,7 +502,7 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
 
         $._assertionToJob[assertionId] = jobId;
 
-        emit ResultSubmitted(jobId, resultHash, responseHash, dataUrl, assertionId);
+        emit ResultSubmitted(jobId, serviceRecordHash, serviceResponseHash, dataUrl, assertionId);
     }
 
     // ============================================================
@@ -689,11 +697,12 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
             _uint2str(job.jobId),
             " on Agent Bazaar completed satisfactorily. "
             "Agent ID: ", _uint2str(job.agentId),
-            ". Request hash: ", _bytes32ToHex(job.requestHash),
-            ". Result hash: ", _bytes32ToHex(job.resultHash),
+            ". Negotiation request hash: ", _bytes32ToHex(job.negotiationRequestHash),
+            ". Negotiation response hash: ", _bytes32ToHex(job.negotiationResponseHash),
+            ". Service record hash: ", _bytes32ToHex(job.serviceRecordHash),
             ". Evidence: ", dataUrl,
             ". Contract: ", _addressToHex(address(this)),
-            ". Verify: download evidence, check keccak256 matches resultHash, judge quality."
+            ". Verify: download evidence, check keccak256 matches serviceRecordHash, judge quality."
         );
     }
 
@@ -724,7 +733,16 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
     }
 
     function _addressToHex(address addr) internal pure returns (string memory) {
-        return _bytes32ToHex(bytes32(uint256(uint160(addr)) << 96));
+        bytes memory alphabet = "0123456789abcdef";
+        bytes memory str = new bytes(42); // "0x" + 40 hex chars
+        str[0] = "0";
+        str[1] = "x";
+        bytes20 addrBytes = bytes20(addr);
+        for (uint256 i = 0; i < 20; i++) {
+            str[2 + i * 2] = alphabet[uint8(addrBytes[i] >> 4)];
+            str[3 + i * 2] = alphabet[uint8(addrBytes[i] & 0x0f)];
+        }
+        return string(str);
     }
 
     // ============================================================

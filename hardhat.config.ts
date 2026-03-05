@@ -98,6 +98,17 @@ const config: HardhatUserConfig = {
       type: "edr-simulated",
       chainType: "op",
     },
+    bscTestnetFork: {
+      type: "edr-simulated",
+      chainType: "l1",
+      forking: {
+        url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.bnbchain.org:8545",
+      },
+    },
+    localhost: {
+      type: "http",
+      url: "http://127.0.0.1:8545",
+    },
     sepolia: {
       type: "http",
       chainType: "l1",
