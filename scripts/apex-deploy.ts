@@ -23,22 +23,34 @@ const MINIMAL_UUPS_SALT =
 
 /** IdentityRegistry proxy (must match deploy-vanity EXPECTED_ADDRESSES) */
 const IDENTITY_REGISTRY_PROXY =
-  "0x8004A41392bdd4A4F12339447ab4B8719D562e51" as const;
+  (process.env.IDENTITY_REGISTRY_ADDRESS || "0x8004A818BFB912233c491871b3d84c89A494BD9e") as `0x${string}`;
 
-/** Salt for Escrow proxy (CREATE2; must match deploy-vanity.ts) */
-const ESCROW_PROXY_SALT =
-  "0x0000000000000000000000000000000000000000000000000000000000018fdc" as Hex;
+/** UMA Optimistic Oracle V3 address (BSC Testnet) */
+const OOV3_ADDRESS =
+  (process.env.OOV3_ADDRESS || "0xFc5bb3e475cc9264760Cf33b1e9ea7B87942C709") as `0x${string}`;
 
-/** Salt for Escrow implementation (CREATE2; must match deploy-vanity.ts) */
-const ESCROW_IMPL_SALT =
+/** Payment token address (TUSD on BSC Testnet) */
+const PAYMENT_TOKEN_ADDRESS =
+  (process.env.PAYMENT_TOKEN_ADDRESS || "0xBA3219b3a40bfbA967A3ca2fC37C1aCDcE81be39") as `0x${string}`;
+
+/** ApexUpgradeable configuration */
+const APEX_CONFIG = {
+  acceptTimeout: BigInt(process.env.ACCEPT_TIMEOUT || "3600"),      // 1 hour
+  submitTimeout: BigInt(process.env.SUBMIT_TIMEOUT || "86400"),     // 24 hours
+  oov3Liveness: BigInt(process.env.OOV3_LIVENESS || "3600"),        // 1 hour challenge period
+  bondRate: BigInt(process.env.BOND_RATE || "1000"),                // 10% (1000 basis points)
+};
+
+/** Salt for Apex proxy (CREATE2; computed for existing Identity Registry) */
+const APEX_PROXY_SALT =
+  "0x000000000000000000000000000000000000000000000000000000000047cd0f" as Hex;
+
+/** Salt for Apex implementation (CREATE2; must match deploy-vanity.ts) */
+const APEX_IMPL_SALT =
   "0x0000000000000000000000000000000000000000000000000000000000000008" as Hex;
 
-/**
- * Expected Escrow proxy address (CREATE2 result for ESCROW_PROXY_SALT).
- * Set after running find-salts once; leave empty to use computed address.
- */
 /** Set after find-salts once; leave empty to use computed address. */
-const EXPECTED_ESCROW_PROXY_ADDRESS: string = "0x8004E0cA46642eC983e5ec537687CB36F9E46351"; // e.g. "0x8004E..."
+const EXPECTED_APEX_PROXY_ADDRESS: string = "0x8004E49143C0A77f9EA5a112CD4e8f10134BeA3e";
 
 // =============================================================================
 // Helpers
@@ -68,12 +80,12 @@ async function main() {
   const codeAt = async (address: string) =>
     publicClient.getBytecode({ address: address as `0x${string}` });
 
-  console.log("Escrow Job (deploy + upgrade, skip if done)");
+  console.log("APEX Protocol (deploy + upgrade, skip if done)");
   console.log("=".repeat(60));
   console.log("Network:", connection.networkName);
   console.log("Deployer:", deployer.account.address);
-  if (EXPECTED_ESCROW_PROXY_ADDRESS) {
-    console.log("Expected Escrow proxy:", EXPECTED_ESCROW_PROXY_ADDRESS);
+  if (EXPECTED_APEX_PROXY_ADDRESS) {
+    console.log("Expected Apex proxy:", EXPECTED_APEX_PROXY_ADDRESS);
   }
   console.log("");
 
@@ -102,111 +114,129 @@ async function main() {
   }
 
   const identityProxyAddress = IDENTITY_REGISTRY_PROXY as `0x${string}`;
-  const escrowProxyInitData = encodeFunctionData({
+  const apexProxyInitData = encodeFunctionData({
     abi: minimalUUPSArtifact.abi,
     functionName: "initialize",
     args: [identityProxyAddress],
   });
-  const escrowProxyBytecode = await getProxyBytecode(
+  const apexProxyBytecode = await getProxyBytecode(
     minimalUUPSAddress,
-    escrowProxyInitData
+    apexProxyInitData
   );
-  const escrowProxyAddress = getCreate2Address({
+  const apexProxyAddress = getCreate2Address({
     from: SAFE_SINGLETON_FACTORY,
-    salt: ESCROW_PROXY_SALT,
-    bytecodeHash: keccak256(escrowProxyBytecode),
+    salt: APEX_PROXY_SALT,
+    bytecodeHash: keccak256(apexProxyBytecode),
   });
 
-  if (EXPECTED_ESCROW_PROXY_ADDRESS && escrowProxyAddress.toLowerCase() !== EXPECTED_ESCROW_PROXY_ADDRESS.toLowerCase()) {
+  if (EXPECTED_APEX_PROXY_ADDRESS && apexProxyAddress.toLowerCase() !== EXPECTED_APEX_PROXY_ADDRESS.toLowerCase()) {
     throw new Error(
-      `Escrow proxy address mismatch: computed ${escrowProxyAddress}, expected ${EXPECTED_ESCROW_PROXY_ADDRESS}. Update ESCROW_PROXY_SALT or EXPECTED_ESCROW_PROXY_ADDRESS.`
+      `Apex proxy address mismatch: computed ${apexProxyAddress}, expected ${EXPECTED_APEX_PROXY_ADDRESS}. Update APEX_PROXY_SALT or EXPECTED_APEX_PROXY_ADDRESS.`
     );
   }
 
-  const escrowImplArtifact = await hre.artifacts.readArtifact("EscrowUpgradeable");
-  const escrowImplBytecode = escrowImplArtifact.bytecode as Hex;
-  const escrowImplAddress = getCreate2Address({
+  const apexImplArtifact = await hre.artifacts.readArtifact("ApexUpgradeable");
+  const apexImplBytecode = apexImplArtifact.bytecode as Hex;
+  const apexImplAddress = getCreate2Address({
     from: SAFE_SINGLETON_FACTORY,
-    salt: ESCROW_IMPL_SALT,
-    bytecodeHash: keccak256(escrowImplBytecode),
+    salt: APEX_IMPL_SALT,
+    bytecodeHash: keccak256(apexImplBytecode),
   });
 
   // ---------------------------------------------------------------------------
-  // Step 1: Deploy Escrow proxy (skip if already deployed)
+  // Step 1: Deploy Apex proxy (skip if already deployed)
   // ---------------------------------------------------------------------------
 
-  if (!(await codeAt(escrowProxyAddress)) || (await codeAt(escrowProxyAddress)) === "0x") {
-    console.log("1. Deploying Escrow proxy...");
+  if (!(await codeAt(apexProxyAddress)) || (await codeAt(apexProxyAddress)) === "0x") {
+    console.log("1. Deploying Apex proxy...");
     const txHash = await deployer.sendTransaction({
       to: SAFE_SINGLETON_FACTORY,
-      data: (ESCROW_PROXY_SALT + escrowProxyBytecode.slice(2)) as Hex,
+      data: (APEX_PROXY_SALT + apexProxyBytecode.slice(2)) as Hex,
     });
     await publicClient.waitForTransactionReceipt({ hash: txHash });
-    console.log("   Deployed at:", escrowProxyAddress);
+    console.log("   Deployed at:", apexProxyAddress);
   } else {
-    console.log("1. Escrow proxy already deployed (skip)");
+    console.log("1. Apex proxy already deployed (skip)");
   }
 
   // ---------------------------------------------------------------------------
-  // Step 2: Deploy Escrow implementation (skip if already deployed)
+  // Step 2: Deploy Apex implementation (skip if already deployed)
   // ---------------------------------------------------------------------------
 
-  if (!(await codeAt(escrowImplAddress)) || (await codeAt(escrowImplAddress)) === "0x") {
-    console.log("2. Deploying Escrow implementation...");
-    const deployData = (ESCROW_IMPL_SALT + escrowImplBytecode.slice(2)) as Hex;
+  if (!(await codeAt(apexImplAddress)) || (await codeAt(apexImplAddress)) === "0x") {
+    console.log("2. Deploying Apex implementation...");
+    const deployData = (APEX_IMPL_SALT + apexImplBytecode.slice(2)) as Hex;
     const txHash = await deployer.sendTransaction({
       to: SAFE_SINGLETON_FACTORY,
       data: deployData,
     });
     await publicClient.waitForTransactionReceipt({ hash: txHash });
-    console.log("   Deployed at:", escrowImplAddress);
+    console.log("   Deployed at:", apexImplAddress);
   } else {
-    console.log("2. Escrow implementation already deployed (skip)");
+    console.log("2. Apex implementation already deployed (skip)");
   }
 
   // ---------------------------------------------------------------------------
-  // Step 3: Upgrade Escrow proxy to EscrowUpgradeable (skip if already upgraded)
+  // Step 3: Upgrade Apex proxy to ApexUpgradeable (skip if already upgraded)
   // ---------------------------------------------------------------------------
 
   const implSlot =
     "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
   const currentImpl = await publicClient.getStorageAt({
-    address: escrowProxyAddress,
+    address: apexProxyAddress,
     slot: implSlot as `0x${string}`,
   });
   const currentImplAddress = currentImpl ? `0x${currentImpl.slice(-40)}` : null;
   const isUpgraded =
-    currentImplAddress?.toLowerCase() === escrowImplAddress.toLowerCase();
+    currentImplAddress?.toLowerCase() === apexImplAddress.toLowerCase();
 
   if (isUpgraded) {
-    console.log("3. Escrow proxy already upgraded (skip)");
+    console.log("3. Apex proxy already upgraded (skip)");
   } else {
     const ownerPrivateKey = process.env.OWNER_PRIVATE_KEY;
     if (!ownerPrivateKey) {
-      console.log("3. Upgrade skipped: set OWNER_PRIVATE_KEY in .env to upgrade Escrow proxy.");
+      console.log("3. Upgrade skipped: set OWNER_PRIVATE_KEY in .env to upgrade Apex proxy.");
     } else {
       const pk = ownerPrivateKey.startsWith("0x") ? ownerPrivateKey : `0x${ownerPrivateKey}`;
       const { createWalletClient, http } = await import("viem");
       const { privateKeyToAccount } = await import("viem/accounts");
       const ownerAccount = privateKeyToAccount(pk as `0x${string}`);
+      const rpcUrl = process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-2-s3.binance.org:8545";
       const ownerWallet = createWalletClient({
         account: ownerAccount,
         chain: (await viem.getPublicClient()).chain,
-        transport: http(),
+        transport: http(rpcUrl),
       });
-      console.log("3. Upgrading Escrow proxy to EscrowUpgradeable...");
-      const escrowInitData = encodeFunctionData({
-        abi: escrowImplArtifact.abi,
+      console.log("3. Upgrading Apex proxy to ApexUpgradeable...");
+      console.log("   Config:");
+      console.log("     Identity Registry:", identityProxyAddress);
+      console.log("     OOV3:", OOV3_ADDRESS);
+      console.log("     Payment Token:", PAYMENT_TOKEN_ADDRESS);
+      console.log("     Accept Timeout:", APEX_CONFIG.acceptTimeout.toString(), "s");
+      console.log("     Submit Timeout:", APEX_CONFIG.submitTimeout.toString(), "s");
+      console.log("     OOV3 Liveness:", APEX_CONFIG.oov3Liveness.toString(), "s");
+      console.log("     Bond Rate:", APEX_CONFIG.bondRate.toString(), "bps");
+
+      const apexInitData = encodeFunctionData({
+        abi: apexImplArtifact.abi,
         functionName: "initialize",
-        args: [identityProxyAddress],
+        args: [
+          identityProxyAddress,
+          OOV3_ADDRESS,
+          PAYMENT_TOKEN_ADDRESS,
+          APEX_CONFIG.acceptTimeout,
+          APEX_CONFIG.submitTimeout,
+          APEX_CONFIG.oov3Liveness,
+          APEX_CONFIG.bondRate,
+        ],
       });
       const upgradeData = encodeFunctionData({
         abi: minimalUUPSArtifact.abi,
         functionName: "upgradeToAndCall",
-        args: [escrowImplAddress, escrowInitData],
+        args: [apexImplAddress, apexInitData],
       });
       const txHash = await ownerWallet.sendTransaction({
-        to: escrowProxyAddress,
+        to: apexProxyAddress,
         data: upgradeData,
       });
       await publicClient.waitForTransactionReceipt({ hash: txHash });
@@ -230,19 +260,19 @@ async function main() {
   } else if (!hasApiKey) {
     console.log("4. Verify on Etherscan: skipped (set ETHERSCAN_API_KEY or BSCSCAN_API_KEY)");
   } else {
-    console.log("4. Verifying Escrow implementation on block explorer...");
+    console.log("4. Verifying Apex implementation on block explorer...");
     try {
       const verified = await verifyContract(
         {
-          address: escrowImplAddress,
-          contract: "contracts/EscrowUpgradeable.sol:EscrowUpgradeable",
+          address: apexImplAddress,
+          contract: "contracts/ApexUpgradeable.sol:ApexUpgradeable",
           constructorArgs: [],
           provider: "etherscan",
         },
         hre,
       );
       if (verified) {
-        console.log("   Escrow implementation verified.");
+        console.log("   Apex implementation verified.");
       } else {
         console.log("   Verification returned false (may already be verified).");
       }
@@ -257,8 +287,8 @@ async function main() {
   }
 
   console.log("");
-  console.log("Escrow proxy:  ", escrowProxyAddress);
-  console.log("Escrow impl:   ", escrowImplAddress);
+  console.log("Apex proxy:  ", apexProxyAddress);
+  console.log("Apex impl:   ", apexImplAddress);
   console.log("");
 }
 

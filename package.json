@@ -6,7 +6,6 @@
   "scripts": {
     "test:core": "node --import tsx --test test/core.ts",
     "test:upgradeable": "node --import tsx --test test/upgradeable.ts",
-    "test:escrow": "node --import tsx --test test/escrow.ts",
     "test": "npm run test:core && npm run test:upgradeable",
     "local:test": "node --import tsx --test test/local.ts",
     "node": "npx hardhat node",
@@ -19,10 +18,10 @@
     "local:upgrade:vanity": "npx hardhat run scripts/upgrade-vanity.ts --network localhost",
     "local:upgrade:vanity:presigned": "npx hardhat run scripts/upgrade-vanity-presigned.ts --network localhost",
     "local:verify:vanity": "npx hardhat run scripts/verify-vanity.ts --network localhost",
-    "local:bazaar": "npx hardhat run scripts/deploy-service-manager.ts --network localhost",
-    "local:bazaar:e2e": "npx hardhat run scripts/test-service-manager-e2e.ts --network localhost",
+    "local:apex": "npx hardhat run scripts/deploy-service-manager.ts --network localhost",
+    "local:apex:e2e": "npx hardhat run scripts/test-service-manager-e2e.ts --network localhost",
     "find-salts": "npx hardhat run scripts/find-vanity-salts-parallel.ts --network localhost",
-    "escrow:job": "npx hardhat run scripts/escrow-job.ts",
+    "apex:deploy": "npx hardhat run scripts/apex-deploy.ts",
     "deploy:vanity": "npx hardhat run scripts/deploy-vanity.ts",
     "upgrade:vanity": "npx hardhat run scripts/upgrade-vanity.ts",
     "verify:vanity": "npx hardhat run scripts/verify-vanity.ts"
