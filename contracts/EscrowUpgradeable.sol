@@ -88,7 +88,7 @@ struct Job {
 
 /**
  * @title EscrowUpgradeable
- * @notice ERC-8004 UUPS-upgradeable escrow with Bazaar V1 job lifecycle.
+ * @notice ERC-8004 UUPS-upgradeable escrow with EscrowUpgradeable job lifecycle.
  *         Manages: Negotiate → Lock → Accept → Execute → Assert (OOv3) → Settle.
  *         The contract is the OOv3 asserter; only clients can dispute.
  *
@@ -196,7 +196,7 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
     }
 
     // ============================================================
-    //  NEW STORAGE (v3) — Bazaar Job Lifecycle
+    //  NEW STORAGE (v3) — EscrowUpgradeable Job Lifecycle
     // ============================================================
 
     /// @custom:storage-location erc7201:erc8004.servicemanager
@@ -695,7 +695,7 @@ contract EscrowUpgradeable is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGua
         return abi.encodePacked(
             "Agent service for Job #",
             _uint2str(job.jobId),
-            " on Agent Bazaar completed satisfactorily. "
+            " on Agent EscrowUpgradeable completed satisfactorily. "
             "Agent ID: ", _uint2str(job.agentId),
             ". Negotiation request hash: ", _bytes32ToHex(job.negotiationRequestHash),
             ". Negotiation response hash: ", _bytes32ToHex(job.negotiationResponseHash),
