@@ -13,18 +13,14 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
  * also use (outside their ERC-7201 namespaced storage).
  */
 contract MinimalUUPS is OwnableUpgradeable, UUPSUpgradeable {
-    /// @dev Identity registry address stored at slot 0 (matches real implementations)
-    address private _identityRegistry;
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address identityRegistry_) public initializer {
-        __Ownable_init(address(0x8888d0A88ef8302dfa4BA53c41c2fE3c4E486f42));
+    function initialize(address owner_) public initializer {
+        __Ownable_init(owner_);
         __UUPSUpgradeable_init();
-        _identityRegistry = identityRegistry_;
     }
 
     function _authorizeUpgrade(
