@@ -45,6 +45,7 @@ interface IAgenticCommerce {
 /**
  * @title IOptimisticOracleV3
  * @notice Interface for UMA's Optimistic Oracle V3
+ * @dev The Assertion struct must match the actual OOv3 contract return type exactly
  */
 interface IOptimisticOracleV3 {
     function assertTruth(
@@ -63,11 +64,30 @@ interface IOptimisticOracleV3 {
     function getAssertionResult(bytes32 assertionId) external view returns (bool);
     function getMinimumBond(address currency) external view returns (uint256);
     
+    /// @notice Escalation manager settings for assertions
+    struct EscalationManagerSettings {
+        bool arbitrateViaEscalationManager;
+        bool discardOracle;
+        bool validateDisputers;
+        address assertingCaller;
+        address escalationManager;
+    }
+    
+    /// @notice Full assertion data structure as returned by OOv3
+    /// @dev This must match the actual struct layout in UMA's OptimisticOracleV3
     struct Assertion {
+        EscalationManagerSettings escalationManagerSettings;
         address asserter;
-        bool settled;
         uint64 assertionTime;
+        bool settled;
+        address currency;
         uint64 expirationTime;
+        bool settlementResolution;
+        bytes32 domainId;
+        bytes32 identifier;
+        uint256 bond;
+        address callbackRecipient;
+        address disputer;
     }
     
     function getAssertion(bytes32 assertionId) external view returns (Assertion memory);
@@ -132,7 +152,8 @@ contract OOv3EvaluatorUpgradeable is
     }
 
     /// @notice Contract version for upgrade tracking
-    uint256 public constant VERSION = 1;
+    /// @dev v2: Fixed IOptimisticOracleV3.Assertion struct to match actual OOv3 return type
+    uint256 public constant VERSION = 2;
 
     // keccak256(abi.encode(uint256(keccak256("oov3evaluator.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant EVALUATOR_STORAGE_LOCATION =

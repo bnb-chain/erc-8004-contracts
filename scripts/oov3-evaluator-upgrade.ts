@@ -16,8 +16,9 @@ const PROXY_ADDRESS =
   (process.env.OOV3_EVALUATOR_ADDRESS || "0x283d858244932664bd69eb7FE3b1587b84B14be8") as `0x${string}`;
 
 /** Salt for new implementation (CREATE2) - increment for each upgrade */
+// v2: Fixed IOptimisticOracleV3.Assertion struct to match actual OOv3 return type
 const NEW_IMPL_SALT =
-  "0x0000000000000000000000000000000000000000000000000000000000008306" as Hex;
+  "0x0000000000000000000000000000000000000000000000000000000000008307" as Hex;
 
 // ERC-1967 implementation slot
 const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
@@ -81,7 +82,7 @@ async function main() {
   console.log("");
   console.log("2. Deploying New Implementation...");
   
-  const implArtifact = await hre.artifacts.readArtifact("OOv3EvaluatorUpgradeable");
+  const implArtifact = await hre.artifacts.readArtifact("contracts/acp/OOv3EvaluatorUpgradeable.sol:OOv3EvaluatorUpgradeable");
   const implBytecode = implArtifact.bytecode as Hex;
   const newImplAddress = getCreate2Address({
     from: SAFE_SINGLETON_FACTORY,
