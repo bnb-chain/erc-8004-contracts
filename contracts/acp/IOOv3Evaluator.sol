@@ -144,17 +144,7 @@ interface IOOv3Evaluator {
     function liveness() external view returns (uint64);
 
     /**
-     * @notice Get the ACP contract address
+     * @notice Get the number of pending (unresolved) assertions
      */
-    function acp() external view returns (address);
-
-    /**
-     * @notice Get the OOv3 contract address
-     */
-    function oov3() external view returns (address);
-
-    /**
-     * @notice Get the bond token address
-     */
-    function bondToken() external view returns (address);
+    function pendingAssertions() external view returns (uint256);
 }

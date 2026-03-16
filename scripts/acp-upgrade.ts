@@ -16,8 +16,9 @@ const PROXY_ADDRESS =
   (process.env.ACP_ADDRESS || "0x8b121FEf5e1688B976D814003f05d9366F3Fa8A3") as `0x${string}`;
 
 /** Salt for new implementation (CREATE2) - increment for each upgrade */
+// v2: setPaymentToken  |  v3: audit remediation (H01, M02, L01, I02, I03)
 const NEW_IMPL_SALT =
-  "0x000000000000000000000000000000000000000000000000000000000000818a" as Hex;
+  "0x000000000000000000000000000000000000000000000000000000000000818b" as Hex;
 
 const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
@@ -157,7 +158,11 @@ async function main() {
   console.log("New Implementation:", newImplAddress);
   console.log("");
   console.log("Changes in this version:");
-  console.log("  - Added setPaymentToken(address) for updating payment token");
+  console.log("  - H01: _totalEscrowed tracking, rescueERC20 excess guard");
+  console.log("  - M02: require _totalEscrowed == 0 in setPaymentToken");
+  console.log("  - L01: safe transfer in _safePayoutOrPend");
+  console.log("  - I02: claimRefund uses _safePayoutOrPend");
+  console.log("  - I03: MinBudgetUpdated & TokensRescued events");
 }
 
 main()

@@ -74,6 +74,7 @@ contract AgenticCommerceUpgradeable is
         IERC20 _paymentToken;
         uint256 _minBudget;
         mapping(address => uint256) _pendingWithdrawals;
+        uint256 _totalEscrowed;
     }
 
     // keccak256(abi.encode(uint256(keccak256("acp.protocol.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -108,6 +109,8 @@ contract AgenticCommerceUpgradeable is
     error NotRefundable();
     error HookCallFailed();
     error NothingToClaim();
+    error RescueExceedsExcess(uint256 amount, uint256 excess);
+    error ActiveEscrowsExist();
 
     // ============================================================
     //  Events (per EIP-8183)
@@ -132,6 +135,8 @@ contract AgenticCommerceUpgradeable is
     event TransferFailed(address indexed recipient, uint256 amount, uint256 jobId);
     event PendingClaimed(address indexed recipient, uint256 amount);
     event PaymentTokenUpdated(address indexed oldToken, address indexed newToken);
+    event MinBudgetUpdated(uint256 oldMinBudget, uint256 newMinBudget);
+    event TokensRescued(address indexed token, address indexed to, uint256 amount);
 
     // ============================================================
     //  Constructor (disable initializers for implementation)
@@ -185,6 +190,10 @@ contract AgenticCommerceUpgradeable is
 
     function nextJobId() external view returns (uint256) {
         return _getACPStorage()._nextJobId;
+    }
+
+    function totalEscrowed() external view returns (uint256) {
+        return _getACPStorage()._totalEscrowed;
     }
 
     // ============================================================
@@ -336,6 +345,7 @@ contract AgenticCommerceUpgradeable is
         _callHook(job.hook, jobId, this.fund.selector, optParams, true);
 
         job.status = Status.Funded;
+        $._totalEscrowed += job.budget;
         $._paymentToken.safeTransferFrom(msg.sender, address(this), job.budget);
 
         _callHook(job.hook, jobId, this.fund.selector, optParams, false);
@@ -406,6 +416,7 @@ contract AgenticCommerceUpgradeable is
         _callHook(job.hook, jobId, this.complete.selector, hookData, true);
 
         job.status = Status.Completed;
+        $._totalEscrowed -= job.budget;
 
         // Transfer full budget to provider (pure EIP-8183, no platform fee)
         _safePayoutOrPend($, job.provider, job.budget, jobId);
@@ -451,6 +462,7 @@ contract AgenticCommerceUpgradeable is
             _callHook(job.hook, jobId, this.reject.selector, hookData, true);
 
             job.status = Status.Rejected;
+            $._totalEscrowed -= job.budget;
 
             // Refund escrowed funds
             _safePayoutOrPend($, job.client, job.budget, jobId);
@@ -485,7 +497,8 @@ contract AgenticCommerceUpgradeable is
         if (block.timestamp < job.expiredAt) revert NotExpired();
 
         job.status = Status.Expired;
-        $._paymentToken.safeTransfer(job.client, job.budget);
+        $._totalEscrowed -= job.budget;
+        _safePayoutOrPend($, job.client, job.budget, jobId);
 
         emit JobExpired(jobId);
         emit Refunded(jobId, job.client, job.budget);
@@ -518,7 +531,10 @@ contract AgenticCommerceUpgradeable is
     // ============================================================
 
     function setMinBudget(uint256 minBudget_) external onlyOwner {
-        _getACPStorage()._minBudget = minBudget_;
+        ACPStorage storage $ = _getACPStorage();
+        uint256 oldMinBudget = $._minBudget;
+        $._minBudget = minBudget_;
+        emit MinBudgetUpdated(oldMinBudget, minBudget_);
     }
 
     /**
@@ -532,6 +548,7 @@ contract AgenticCommerceUpgradeable is
     function setPaymentToken(address newToken) external onlyOwner {
         require(newToken != address(0), "invalid token");
         ACPStorage storage $ = _getACPStorage();
+        if ($._totalEscrowed != 0) revert ActiveEscrowsExist();
         address oldToken = address($._paymentToken);
         $._paymentToken = IERC20(newToken);
         emit PaymentTokenUpdated(oldToken, newToken);
@@ -539,7 +556,14 @@ contract AgenticCommerceUpgradeable is
 
     function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
         require(to != address(0), "invalid address");
+        ACPStorage storage $ = _getACPStorage();
+        if (token == address($._paymentToken)) {
+            uint256 balance = $._paymentToken.balanceOf(address(this));
+            uint256 excess = balance > $._totalEscrowed ? balance - $._totalEscrowed : 0;
+            if (amount > excess) revert RescueExceedsExcess(amount, excess);
+        }
         IERC20(token).safeTransfer(to, amount);
+        emit TokensRescued(token, to, amount);
     }
 
     // ============================================================
@@ -583,12 +607,14 @@ contract AgenticCommerceUpgradeable is
     ) internal {
         if (amount == 0) return;
 
-        try $._paymentToken.transfer(recipient, amount) returns (bool success) {
-            if (!success) {
-                $._pendingWithdrawals[recipient] += amount;
-                emit TransferFailed(recipient, amount, jobId);
-            }
-        } catch {
+        // Low-level call handles non-standard tokens (e.g., USDT that returns no bool)
+        (bool success, bytes memory returnData) = address($._paymentToken).call(
+            abi.encodeCall(IERC20.transfer, (recipient, amount))
+        );
+
+        if (success && (returnData.length == 0 || abi.decode(returnData, (bool)))) {
+            // Transfer succeeded
+        } else {
             $._pendingWithdrawals[recipient] += amount;
             emit TransferFailed(recipient, amount, jobId);
         }

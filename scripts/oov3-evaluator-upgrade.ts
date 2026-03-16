@@ -17,8 +17,9 @@ const PROXY_ADDRESS =
 
 /** Salt for new implementation (CREATE2) - increment for each upgrade */
 // v2: Fixed IOptimisticOracleV3.Assertion struct to match actual OOv3 return type
+// v3: Audit remediation (M01, M03, M04, M05, I01, I05)
 const NEW_IMPL_SALT =
-  "0x0000000000000000000000000000000000000000000000000000000000008307" as Hex;
+  "0x0000000000000000000000000000000000000000000000000000000000008308" as Hex;
 
 // ERC-1967 implementation slot
 const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";

@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./IACPHook.sol";
+import "./IOOv3Evaluator.sol";
 
 /**
  * @title IAgenticCommerce
@@ -114,12 +115,13 @@ interface IOptimisticOracleV3 {
  *   3. Challenge period (liveness) starts
  *   4. After liveness, anyone calls settleJob() → complete/reject
  */
-contract OOv3EvaluatorUpgradeable is 
-    IACPHook, 
-    OwnableUpgradeable, 
-    ReentrancyGuardUpgradeable, 
+contract OOv3EvaluatorUpgradeable is
+    IACPHook,
+    IOOv3Evaluator,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable,
     PausableUpgradeable,
-    UUPSUpgradeable 
+    UUPSUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -149,11 +151,15 @@ contract OOv3EvaluatorUpgradeable is
         mapping(uint256 => bool) jobDisputed;
         mapping(uint256 => string) jobDataUrl;
         mapping(bytes32 => bool) assertionExists;  // Fix jobId=0 edge case
+        mapping(uint256 => uint256) jobBondAmount;  // Cached bond per job (M04)
+        uint256 pendingAssertions;                   // Active assertion counter (M05)
     }
 
     /// @notice Contract version for upgrade tracking
     /// @dev v2: Fixed IOptimisticOracleV3.Assertion struct to match actual OOv3 return type
-    uint256 public constant VERSION = 2;
+    /// @dev v3: Audit remediation — M01 try-catch, M03 dispute-win bond recovery,
+    ///          M04 per-job bond caching, M05 pendingAssertions guard, I01/I05
+    uint256 public constant VERSION = 3;
 
     // keccak256(abi.encode(uint256(keccak256("oov3evaluator.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant EVALUATOR_STORAGE_LOCATION =
@@ -169,28 +175,14 @@ contract OOv3EvaluatorUpgradeable is
     //  Events
     // ============================================================
 
-    event AssertionInitiated(
-        uint256 indexed jobId,
-        bytes32 indexed assertionId,
-        address initiator,
-        uint256 bond
-    );
-    event AssertionResolved(
-        uint256 indexed jobId,
-        bytes32 indexed assertionId,
-        bool assertedTruthfully
-    );
-    event AssertionDisputed(
-        uint256 indexed jobId,
-        bytes32 indexed assertionId
-    );
-    event BondDeposited(address indexed depositor, uint256 amount);
-    event BondWithdrawn(address indexed recipient, uint256 amount);
+    // Events inherited from IOOv3Evaluator: AssertionInitiated, AssertionResolved,
+    // AssertionDisputed, BondDeposited, BondWithdrawn
     event BondReturned(bytes32 indexed assertionId, uint256 amount);
     event LivenessUpdated(uint64 oldLiveness, uint64 newLiveness);
     event ACPUpdated(address indexed oldAcp, address indexed newAcp);
     event OOv3Updated(address indexed oldOov3, address indexed newOov3);
     event BondTokenUpdated(address indexed oldToken, address indexed newToken);
+    event BondBalanceSynced(uint256 oldBalance, uint256 newBalance);
 
     // ============================================================
     //  Errors
@@ -203,6 +195,7 @@ contract OOv3EvaluatorUpgradeable is
     error OnlyOOv3();
     error OnlyACP();
     error NoAssertionForJob(uint256 jobId);
+    error PendingAssertionsExist(uint256 count);
 
     // ============================================================
     //  Constructor (disabled for proxy)
@@ -301,6 +294,10 @@ contract OOv3EvaluatorUpgradeable is
 
     function assertionExists(bytes32 assertionId) external view returns (bool) {
         return _getEvaluatorStorage().assertionExists[assertionId];
+    }
+
+    function pendingAssertions() external view returns (uint256) {
+        return _getEvaluatorStorage().pendingAssertions;
     }
 
     // ============================================================
@@ -405,20 +402,36 @@ contract OOv3EvaluatorUpgradeable is
         require($.assertionExists[assertionId], "unknown assertion");
         uint256 jobId = $.assertionToJob[assertionId];
 
-        // Bond is returned by OOv3 on successful resolution (no dispute)
-        // Update bondBalance to reflect the returned bond
-        if (!$.jobDisputed[jobId]) {
-            uint256 bond = $.oov3.getMinimumBond(address($.bondToken));
-            $.bondBalance += bond;
-            emit BondReturned(assertionId, bond);
+        // Decrement pending assertions counter (M05)
+        if ($.pendingAssertions > 0) {
+            $.pendingAssertions--;
         }
+
+        // Bond accounting: use cached bond amount to avoid desync (M04)
+        uint256 cachedBond = $.jobBondAmount[jobId];
+
+        if (!$.jobDisputed[jobId]) {
+            // Bond returned by OOv3 on successful resolution (no dispute)
+            $.bondBalance += cachedBond;
+            emit BondReturned(assertionId, cachedBond);
+        } else if (assertedTruthfully) {
+            // Dispute resolved in asserter's favor — UMA returns 2*bond - oracleFee (M03)
+            uint256 actualBalance = $.bondToken.balanceOf(address(this));
+            if (actualBalance > $.bondBalance) {
+                uint256 received = actualBalance - $.bondBalance;
+                $.bondBalance += received;
+                emit BondReturned(assertionId, received);
+            }
+        }
+        // If disputed and assertedTruthfully == false, bond is lost to disputer
 
         emit AssertionResolved(jobId, assertionId, assertedTruthfully);
 
+        // M01: try-catch prevents permanent bond lock if job already expired
         if (assertedTruthfully) {
-            $.acp.complete(jobId, assertionId, "");
+            try $.acp.complete(jobId, assertionId, "") {} catch {}
         } else {
-            $.acp.reject(jobId, assertionId, "");
+            try $.acp.reject(jobId, assertionId, "") {} catch {}
         }
     }
 
@@ -561,6 +574,7 @@ contract OOv3EvaluatorUpgradeable is
     function setACP(address newAcp) external onlyOwner {
         require(newAcp != address(0), "invalid acp");
         EvaluatorStorage storage $ = _getEvaluatorStorage();
+        if ($.pendingAssertions != 0) revert PendingAssertionsExist($.pendingAssertions);
         address oldAcp = address($.acp);
         $.acp = IAgenticCommerce(newAcp);
         emit ACPUpdated(oldAcp, newAcp);
@@ -573,6 +587,7 @@ contract OOv3EvaluatorUpgradeable is
     function setOOv3(address newOov3) external onlyOwner {
         require(newOov3 != address(0), "invalid oov3");
         EvaluatorStorage storage $ = _getEvaluatorStorage();
+        if ($.pendingAssertions != 0) revert PendingAssertionsExist($.pendingAssertions);
         address oldOov3 = address($.oov3);
         $.oov3 = IOptimisticOracleV3(newOov3);
         emit OOv3Updated(oldOov3, newOov3);
@@ -599,8 +614,10 @@ contract OOv3EvaluatorUpgradeable is
      */
     function syncBondBalance() external onlyOwner {
         EvaluatorStorage storage $ = _getEvaluatorStorage();
+        uint256 oldBalance = $.bondBalance;
         uint256 actualBalance = $.bondToken.balanceOf(address(this));
         $.bondBalance = actualBalance;
+        emit BondBalanceSynced(oldBalance, actualBalance);
     }
 
     // ============================================================
@@ -650,6 +667,8 @@ contract OOv3EvaluatorUpgradeable is
         $.jobToAssertion[jobId] = assertionId;
         $.jobAssertionInitiated[jobId] = true;
         $.assertionExists[assertionId] = true;
+        $.jobBondAmount[jobId] = bond;
+        $.pendingAssertions++;
 
         emit AssertionInitiated(jobId, assertionId, msg.sender, bond);
     }
