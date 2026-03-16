@@ -75,6 +75,7 @@ contract AgenticCommerceUpgradeable is
         uint256 _minBudget;
         mapping(address => uint256) _pendingWithdrawals;
         uint256 _totalEscrowed;
+        uint256 _totalPendingWithdrawals;
     }
 
     // keccak256(abi.encode(uint256(keccak256("acp.protocol.storage")) - 1)) & ~bytes32(uint256(0xff))
@@ -111,6 +112,7 @@ contract AgenticCommerceUpgradeable is
     error NothingToClaim();
     error RescueExceedsExcess(uint256 amount, uint256 excess);
     error ActiveEscrowsExist();
+    error PendingWithdrawalsExist();
 
     // ============================================================
     //  Events (per EIP-8183)
@@ -194,6 +196,10 @@ contract AgenticCommerceUpgradeable is
 
     function totalEscrowed() external view returns (uint256) {
         return _getACPStorage()._totalEscrowed;
+    }
+
+    function totalPendingWithdrawals() external view returns (uint256) {
+        return _getACPStorage()._totalPendingWithdrawals;
     }
 
     // ============================================================
@@ -517,6 +523,7 @@ contract AgenticCommerceUpgradeable is
         if (amount == 0) revert NothingToClaim();
 
         $._pendingWithdrawals[msg.sender] = 0;
+        $._totalPendingWithdrawals -= amount;
         $._paymentToken.safeTransfer(msg.sender, amount);
 
         emit PendingClaimed(msg.sender, amount);
@@ -549,6 +556,7 @@ contract AgenticCommerceUpgradeable is
         require(newToken != address(0), "invalid token");
         ACPStorage storage $ = _getACPStorage();
         if ($._totalEscrowed != 0) revert ActiveEscrowsExist();
+        if ($._totalPendingWithdrawals != 0) revert PendingWithdrawalsExist();
         address oldToken = address($._paymentToken);
         $._paymentToken = IERC20(newToken);
         emit PaymentTokenUpdated(oldToken, newToken);
@@ -616,6 +624,7 @@ contract AgenticCommerceUpgradeable is
             // Transfer succeeded
         } else {
             $._pendingWithdrawals[recipient] += amount;
+            $._totalPendingWithdrawals += amount;
             emit TransferFailed(recipient, amount, jobId);
         }
     }

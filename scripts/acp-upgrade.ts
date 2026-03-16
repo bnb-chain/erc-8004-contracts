@@ -17,8 +17,9 @@ const PROXY_ADDRESS =
 
 /** Salt for new implementation (CREATE2) - increment for each upgrade */
 // v2: setPaymentToken  |  v3: audit remediation (H01, M02, L01, I02, I03)
+// v4: add _totalPendingWithdrawals guard to setPaymentToken
 const NEW_IMPL_SALT =
-  "0x000000000000000000000000000000000000000000000000000000000000818b" as Hex;
+  "0x000000000000000000000000000000000000000000000000000000000000818c" as Hex;
 
 const IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
