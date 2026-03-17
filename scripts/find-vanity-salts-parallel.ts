@@ -218,17 +218,17 @@ async function main() {
   const validationResult = await findVanitySaltParallel("0x8004c", validationProxyBytecode, "C", numWorkers);
   console.log("");
 
-  // Find salt for Escrow proxy (0x8004E)
+  // Find salt for Apex proxy (0x8004E)
   // Initialize with IdentityRegistry address
-  console.log("Step 5: Finding salt for Escrow (0x8004E)...");
+  console.log("Step 5: Finding salt for Apex (0x8004E)...");
   console.log(`        Initialize with: ${identityProxyAddress}`);
-  const escrowInitData = encodeFunctionData({
+  const apexInitData = encodeFunctionData({
     abi: minimalUUPSArtifact.abi,
     functionName: "initialize",
     args: [identityProxyAddress]
   });
-  const escrowProxyBytecode = await getProxyBytecode(minimalUUPSAddress, escrowInitData);
-  const escrowResult = await findVanitySaltParallel("0x8004e", escrowProxyBytecode, "E", numWorkers);
+  const apexProxyBytecode = await getProxyBytecode(minimalUUPSAddress, apexInitData);
+  const apexResult = await findVanitySaltParallel("0x8004e", apexProxyBytecode, "E", numWorkers);
   console.log("");
 
   // Summary
@@ -253,16 +253,16 @@ async function main() {
   console.log("  Address: ", validationResult.address);
   console.log(`  Init:     MinimalUUPS.initialize(${identityProxyAddress})`);
   console.log("");
-  console.log("Escrow Proxy:");
-  console.log("  Salt:    ", escrowResult.salt);
-  console.log("  Address: ", escrowResult.address);
+  console.log("Apex Proxy:");
+  console.log("  Salt:    ", apexResult.salt);
+  console.log("  Address: ", apexResult.address);
   console.log(`  Init:     MinimalUUPS.initialize(${identityProxyAddress})`);
   console.log("");
   console.log("=".repeat(80));
   console.log("Next steps:");
-  console.log("1. Update VANITY_SALTS and ESCROW_PROXY_SALT in scripts/deploy-vanity.ts");
+  console.log("1. Update VANITY_SALTS and APEX_PROXY_SALT in scripts/deploy-vanity.ts");
   console.log("2. Update EXPECTED_ADDRESSES in scripts/deploy-vanity.ts");
-  console.log("3. Update EXPECTED_ESCROW_PROXY_ADDRESS in scripts/escrow-job.ts");
+  console.log("3. Update EXPECTED_APEX_PROXY_ADDRESS in scripts/apex-deploy.ts");
   console.log("4. Update scripts/verify-vanity.ts with new addresses");
   console.log("");
 
@@ -271,13 +271,13 @@ async function main() {
       identity: identityResult.salt,
       reputation: reputationResult.salt,
       validation: validationResult.salt,
-      escrow: escrowResult.salt
+      apex: apexResult.salt
     },
     addresses: {
       identity: identityResult.address,
       reputation: reputationResult.address,
       validation: validationResult.address,
-      escrow: escrowResult.address
+      apex: apexResult.address
     }
   };
 }
